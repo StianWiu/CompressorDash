@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../web/dist/index.html'));
 });
 
-let currentPath = '/mnt/media/Videos/';
+let currentPath = '/mnt/media/';  // Default path
 const dbFilePath = '/mnt/storage/compressedVideos.json';
 
 let currentFFmpegProcess = null;
@@ -277,7 +277,7 @@ app.post('/api/browse', (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.SERVER_PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

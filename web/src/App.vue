@@ -103,6 +103,13 @@
 <script>
 const axios = require("axios");
 
+// Get IP and Port from url
+const url = window.location.href;
+const ip = url.slice(0, url.lastIndexOf(":") + 3);
+const port = url.slice(url.lastIndexOf(":") + 3, url.lastIndexOf("/"));
+
+const apiUrl = `${ip}${port}/api`;
+
 export default {
   name: "App",
   data() {
@@ -126,7 +133,7 @@ export default {
     async readDir() {
       await axios({
         method: "post",
-        url: "http://localhost:3000/api/browse",
+        url: apiUrl + "/browse",
         data: {
           type: "read",
         },
@@ -148,7 +155,7 @@ export default {
         .catch(async () => {
           await axios({
             method: "post",
-            url: "http://localhost:3000/api/browse",
+            url: apiUrl + "/browse",
             data: {
               type: "move",
               dir: "..",
@@ -160,7 +167,7 @@ export default {
       this.refresh = false;
       await axios({
         method: "post",
-        url: "http://localhost:3000/api/browse",
+        url: apiUrl + "/browse",
         data: {
           type: "move",
           dir: file,
@@ -174,9 +181,8 @@ export default {
     async progress() {
       await axios({
         method: "get",
-        url: "http://localhost:3000/api/ffmpeg/progress",
+        url: apiUrl + "/ffmpeg/progress",
       }).then((response) => {
-        console.log(response.data);
         if (response.data.currentFile) {
           this.active = true;
         } else {
@@ -187,14 +193,13 @@ export default {
 
       await axios({
         method: "get",
-        url: "http://localhost:3000/api/ffmpeg/queue",
+        url: apiUrl + "/ffmpeg/queue",
       }).then((response) => {
         let tempQueue = [];
         // if filesize is above 1gb, convert to gb, it is already converted to mb
         for (let i = 0; i < response.data.length; i++) {
           let size = response.data[i].size;
           let newSize = response.data[i].newSize;
-          console.log(size);
           let difference = (newSize / size) * 100;
           if (size > 1000) {
             size = (size / 1000).toFixed(2) + " GB";
@@ -211,8 +216,6 @@ export default {
             newSize = newSize.toFixed(2) + " MB";
           }
 
-          console.log(size);
-
           tempQueue.push({
             path: response.data[i].path,
             size: size,
@@ -227,24 +230,20 @@ export default {
     start() {
       axios({
         method: "post",
-        url: "http://localhost:3000/api/ffmpeg",
+        url: apiUrl + "/ffmpeg",
         data: {
           type: "start",
           options: ["-c:v libx264", "-crf 22", "-preset " + this.speed],
         },
-      }).then((response) => {
-        console.log(response.data);
       });
     },
     stop() {
       axios({
         method: "post",
-        url: "http://localhost:3000/api/ffmpeg",
+        url: apiUrl + "/ffmpeg",
         data: {
           type: "stop",
         },
-      }).then((response) => {
-        console.log(response.data);
       });
     },
   },
