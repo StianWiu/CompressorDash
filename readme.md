@@ -7,7 +7,6 @@ Compressor Dash is a web application that allows users to browse and compress me
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Volume Binding](#volume-binding)
 - [Contributing](#contributing)
 - [License](#license)
 
