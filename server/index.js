@@ -1,253 +1,43 @@
 const express = require('express');
-const path = require('path');
 const app = express();
-const ffmpeg = require('fluent-ffmpeg');
-const fs = require('fs-extra');
+
+const path = require('path');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fs = require('fs-extra');
+
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, '../web/dist')));
 
+// Serve the web app
+app.use(express.static(path.join(__dirname, '../web/dist')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../web/dist/index.html'));
 });
 
-let currentPath = '/mnt/media/';  // Default path
-const dbFilePath = '/mnt/storage/compressedVideos.json';
+let currentPath = '/mnt/media/';
+// let currentPath = 'C:/Users/pignu/Desktop/ASMR Videos/test';
+let finishedVideosPath = "/mnt/storage/compressedVideos.json";
+// let finishedVideosPath = "C:/Users/pignu/Desktop/ASMR Videos/test/test/compressedVideos.json";
 
-let currentFFmpegProcess = null;
-let shouldStop = false;
-let totalFiles = 0;
-let processedFiles = 0;
-let currentFile = null;
-let currentProgress = 0;
-let compressedVideos = [];
-let isProcessing = false;
+// Make sure compressedVideos.json exists
+if (!fs.existsSync(finishedVideosPath)) {
+  fs.ensureFileSync(finishedVideosPath);
+  fs.writeJsonSync(finishedVideosPath, []);
+}
+
+
+
+const finishedVideo = (videoPath) => {
+  let tempArray = fs.readJsonSync(finishedVideosPath);
+  tempArray.push(videoPath);
+  fs.writeJsonSync(finishedVideosPath, tempArray);
+}
+
 let queue = [];
-
-// Load compressed videos database
-if (fs.existsSync(dbFilePath)) {
-  compressedVideos = JSON.parse(fs.readFileSync(dbFilePath));
-} else {
-  fs.ensureFileSync(dbFilePath);
-  fs.writeJsonSync(dbFilePath, []);
-}
-
-app.post('/api/ffmpeg', async (req, res) => {
-  const type = req.body.type;
-  const ffmpegOptions = req.body.options || [];
-  const dir = currentPath;  // Use a local copy of currentPath
-
-  if (type === 'start') {
-    if (isProcessing) {
-      return res.status(400).send('A processing task is already running.');
-    }
-    isProcessing = true;
-    totalFiles = await countVideoFiles(dir);
-    processedFiles = 0;
-    shouldStop = false;
-    currentFile = null;
-    currentProgress = 0;
-    processVideos(dir, ffmpegOptions).then(() => {
-      console.log('Finished processing videos');
-      isProcessing = false;
-      shouldStop = false;
-    }).catch((error) => {
-      console.error('Error processing videos:', error);
-      isProcessing = false;
-    });
-    res.send('Started processing videos');
-  } else if (type === 'stop') {
-    shouldStop = true;
-    if (currentFFmpegProcess) {
-      currentFFmpegProcess.kill('SIGKILL');
-    }
-    resetState();
-    res.send('Stopping processing videos');
-  } else {
-    res.status(400).send('Invalid type');
-  }
-});
-
-app.get('/api/ffmpeg/progress', (req, res) => {
-  res.json({
-    totalFiles,
-    processedFiles,
-    currentFile,
-    currentProgress
-  });
-});
-
-app.get('/api/ffmpeg/queue', (req, res) => {
-  res.json(queue);
-});
-
-function resetState() {
-  currentFFmpegProcess = null;
-  currentFile = null;
-  currentProgress = 0;
-  isProcessing = false;
-}
-
-async function countVideoFiles(dir) {
-  queue = [];  // Reset queue
-  const files = await fs.readdir(dir);
-  let count = 0;
-  for (const file of files) {
-    const filePath = path.join(dir, file);
-    const stat = await fs.stat(filePath);
-    if (stat.isDirectory()) {
-      count += await countVideoFiles(filePath);
-    } else {
-      const isVideo = await isVideoFile(filePath);
-      if (isVideo && !compressedVideos.includes(filePath)) count++;
-      queue.push({
-        path: filePath,
-        size: stat.size / 1024 / 1024,  // Convert to MB
-        newSize: null,  // New size will be updated after compression
-        progress: 0,
-        finished: false,
-        active: false
-      });
-    }
-  }
-  return count;
-}
-
-async function processVideos(dir, ffmpegOptions) {
-  const files = await fs.readdir(dir);
-  for (const file of files) {
-    if (shouldStop) break;
-
-    const filePath = path.join(dir, file);
-    const stat = await fs.stat(filePath);
-
-    if (stat.isDirectory()) {
-      await processVideos(filePath, ffmpegOptions);
-    } else {
-      const isVideo = await isVideoFile(filePath);
-      if (isVideo && !compressedVideos.includes(filePath)) {
-        try {
-          if (shouldStop) break;
-          currentFile = filePath;
-          const queueIndex = queue.findIndex(item => item.path === filePath);
-          if (queueIndex !== -1) {
-            queue[queueIndex].active = true;
-          }
-          await compressVideo(filePath, ffmpegOptions);
-          processedFiles++;
-          currentFile = null;
-          currentProgress = 0;
-          if (queueIndex !== -1) {
-            const newSize = (await fs.stat(filePath)).size / 1024 / 1024;  // Convert to MB
-            queue[queueIndex].finished = true;
-            queue[queueIndex].active = false;
-            queue[queueIndex].progress = 100;
-            queue[queueIndex].newSize = newSize;
-          }
-        } catch (error) {
-          console.error(`Failed to process ${filePath}: ${error.message}`);
-        }
-      }
-    }
-  }
-}
-
-async function isVideoFile(filePath) {
-  return new Promise((resolve) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err || !metadata || !metadata.format) {
-        resolve(false);
-      } else {
-        const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
-        resolve(!!videoStream);
-      }
-    });
-  });
-}
-
-function parseTimemark(timemark) {
-  const parts = timemark.split(':');
-  return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2]);
-}
-
-async function compressVideo(filePath, ffmpegOptions) {
-  return new Promise((resolve, reject) => {
-    if (shouldStop) {
-      resolve(); // Skip compression if stopping
-      return;
-    }
-
-    const compressedPath = filePath.replace(/\.mp4$/, '.compress.mp4');
-    let fileDuration = 0;
-
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (metadata && metadata.format && metadata.format.duration) {
-        fileDuration = metadata.format.duration;
-      }
-    });
-
-    currentFFmpegProcess = ffmpeg(filePath)
-      .output(compressedPath)
-      .addOptions(ffmpegOptions)
-      .on('progress', (progress) => {
-        if (fileDuration > 0 && progress.timemark) {
-          currentProgress = (parseTimemark(progress.timemark) / fileDuration) * 100;
-          const queueIndex = queue.findIndex(item => item.path === filePath);
-          if (queueIndex !== -1) {
-            queue[queueIndex].progress = currentProgress;
-          }
-        }
-      })
-      .on('end', async () => {
-        if (shouldStop) {
-          resolve(); // Resolve if stopping
-          return;
-        }
-        try {
-          const isValid = await validateVideo(compressedPath);
-          if (isValid) {
-            // Check if the new file is smaller than the original
-            const originalSize = (await fs.stat(filePath)).size;
-            const compressedSize = (await fs.stat(compressedPath)).size;
-            fs.writeJsonSync(dbFilePath, compressedVideos);
-            if (compressedSize >= originalSize) {
-              await fs.remove(compressedPath);
-              resolve();
-              return;
-            }
-            await fs.remove(filePath);
-            await fs.rename(compressedPath, filePath);
-            compressedVideos.push(filePath);
-          } else {
-            await fs.remove(compressedPath);
-          }
-          resolve();
-        } catch (error) {
-          reject(error);
-        }
-      })
-      .on('error', async (err) => {
-        await fs.remove(compressedPath);
-        reject(err);
-      })
-      .run();
-  });
-}
-
-async function validateVideo(filePath) {
-  return new Promise((resolve) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err || !metadata) {
-        resolve(false);
-      } else {
-        resolve(true);
-      }
-    });
-  });
-}
+let stop = false;
+let started = false;
 
 app.post('/api/browse', (req, res) => {
   if (req.body.type === 'read') {
@@ -277,7 +67,168 @@ app.post('/api/browse', (req, res) => {
   }
 });
 
-const PORT = process.env.SERVER_PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.get('/api/queue', (req, res) => {
+  res.send({
+    queue: queue,
+    active: started
+  });
+});
+
+app.post('/api/ffmpeg/start', async (req, res) => {
+  if (started) {
+    res.send('Already processing videos');
+    return;
+  }
+  started = true;
+  stop = false;
+  const ffmpegOptions = req.body.ffmpegOptions;
+  await createQueue();
+  res.send('Started processing videos');
+  // Loop through queue, compressing videos, then update queue with new sizes and the progress while compressing.
+  for (let i = 0; i < queue.length; i++) {
+    if (stop) {
+      break;
+    }
+    const video = queue[i];
+    try {
+      const newPath = await compressFile(video.path, ffmpegOptions);
+      if (stop) {
+        // Delete the compressed file if the process was stopped
+        await fs.unlink(newPath);
+        break;
+      }
+      video.newSize = fs.statSync(newPath).size / 1024 / 1024;
+      console.log('Compressed file:', video.path);
+
+      // If the compressed file is larger than the original file, delete the compressed file
+      if (video.newSize > video.size) {
+        await fs.unlink(newPath);
+        console.log('Compressed file is larger than original file, deleting compressed file');
+        continue;
+      }
+
+      // Remove original file
+      await fs.unlink(video.path);
+      // Move compressed file to original file path
+      await fs.move(newPath, video.path);
+      // Add video to finished videos
+      finishedVideo(video.path);
+    } catch (error) {
+      console.error('Error compressing file:', error);
+      if (stop) {
+        // Delete the compressed file if the process was stopped
+        await fs.unlink(video.path.replace('.mp4', '-compressed.mp4'));
+      }
+      // Continue to next file
+      continue;
+    }
+  }
+  console.log('Finished processing videos');
+  stop = false;
+});
+
+app.post('/api/ffmpeg/stop', (req, res) => {
+  stop = true;
+  started = false;
+  res.send('Stopping processing videos');
+});
+
+// Recursively get all videos in a directory, then sort alphabetically
+
+const getVideos = async (dir) => {
+  // Check if the directory exists
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  const files = await fs.readdir(dir);
+  const videos = await Promise.all(files.map(async (file) => {
+    const filePath = path.join(dir, file);
+    try {
+
+      const stat = await fs.stat(filePath);
+      if (stat.isDirectory()) {
+        return getVideos(filePath);
+      } else {
+        // Check if the file is a video, not only mp4
+        if (file.endsWith('.mp4') || file.endsWith('.mkv') || file.endsWith('.webm') || file.endsWith('.avi') || file.endsWith('.mov') || file.endsWith('.flv') || file.endsWith('.wmv') || file.endsWith('.m4v') || file.endsWith('.mpg') || file.endsWith('.mpeg') || file.endsWith('.m2v') || file.endsWith('.m4v') || file.endsWith('.ts') || file.endsWith('.flv')) {
+          return filePath;
+        }
+      }
+    } catch (error) {
+      console.error('Error getting videos:', error);
+    }
+  }));
+  return videos.flat().filter((video) => video);
+};
+
+// Get videos, then sort them alphabetically, then get their filesize, then add them to queue.
+const createQueue = async () => {
+  let videos = await getVideos(currentPath);
+  videos.sort();
+  // Make sure not to queue a video that is already compressed
+  const compressedVideos = fs.readJsonSync(finishedVideosPath);
+  videos = videos.filter((video) => !compressedVideos.includes(video));
+  const videosWithSize = await Promise.all(videos.map(async (video) => {
+    try {
+      const stat = await fs.stat(video);
+      return {
+        path: video,
+        size: stat.size / 1024 / 1024,
+        newSize: null,
+        progress: 0
+      };
+    } catch (error) {
+      console.error('Error getting file size:', error);
+      return;
+    }
+  }));
+  queue = videosWithSize;
+}
+
+const compressFile = async (filePath, ffmpegOptions) => {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = require('fluent-ffmpeg');
+    const outputPath = filePath.replace('.mp4', '-compressed.mp4');
+    let ffmpegProcess = ffmpeg(filePath)
+      .addOptions(ffmpegOptions)
+      .output(outputPath)
+      .on('end', () => {
+        // Set progress to 100% when finished
+        const queueIndex = queue.findIndex(item => item.path === filePath);
+        if (queueIndex !== -1) {
+          queue[queueIndex].progress = 100;
+        }
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        reject(err);
+      }).on('progress', (progress) => {
+        // Update progress in queue
+        const queueIndex = queue.findIndex(item => item.path === filePath);
+        if (queueIndex !== -1) {
+          queue[queueIndex].progress = progress.percent;
+        }
+        if (stop) {
+          // Set progress to 0% when stopped
+          const queueIndex = queue.findIndex(item => item.path === filePath);
+          if (queueIndex !== -1) {
+            queue[queueIndex].progress = 0;
+          }
+          ffmpegProcess.kill('SIGKILL');
+          ffmpegProcess.on('exit', async () => {
+            try {
+              reject('Stopped processing');
+            } catch (err) {
+              reject(err);
+            }
+          });
+        }
+      })
+      .save(outputPath);
+  });
+};
+
+
+app.listen(3000, () => {
+  console.log(`Server is running on port 3000`);
 });

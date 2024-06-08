@@ -58,7 +58,7 @@
         <div
           v-else-if="!video.progress.toString().startsWith(100)"
           class="colorBlock"
-          style="background-color: #e3d76f"
+          style="background-color: #db966e"
         >
           {{
             video.progress
@@ -84,10 +84,10 @@
           <br />
           <!-- Calculate % difference -->
           <span v-if="video.difference > 100" style="color: #e36f7b">
-            {{ video.difference }}%
+            +{{ video.difference - 100 }}%
           </span>
           <span v-else-if="video.difference < 100" style="color: #6fe377">
-            {{ video.difference }}%
+            -{{ video.difference - 100 }}%
           </span>
           <br />
           <p class="newSize">{{ video.newSize }}</p>
@@ -117,7 +117,6 @@ export default {
       files: [],
       path: "",
       active: false,
-      progressObject: {},
       refresh: true,
       queue: [],
       speed: undefined,
@@ -181,25 +180,13 @@ export default {
     async progress() {
       await axios({
         method: "get",
-        url: apiUrl + "/ffmpeg/progress",
-      }).then((response) => {
-        if (response.data.currentFile) {
-          this.active = true;
-        } else {
-          this.active = false;
-        }
-        this.progressObject = response.data;
-      });
-
-      await axios({
-        method: "get",
-        url: apiUrl + "/ffmpeg/queue",
+        url: apiUrl + "/queue",
       }).then((response) => {
         let tempQueue = [];
         // if filesize is above 1gb, convert to gb, it is already converted to mb
-        for (let i = 0; i < response.data.length; i++) {
-          let size = response.data[i].size;
-          let newSize = response.data[i].newSize;
+        for (let i = 0; i < response.data.queue.length; i++) {
+          let size = response.data.queue[i].size;
+          let newSize = response.data.queue[i].newSize;
           let difference = (newSize / size) * 100;
           if (size > 1000) {
             size = (size / 1000).toFixed(2) + " GB";
@@ -217,33 +204,33 @@ export default {
           }
 
           tempQueue.push({
-            path: response.data[i].path,
+            path: response.data.queue[i].path,
             size: size,
             newSize: newSize,
             difference: difference.toFixed(2),
-            progress: response.data[i].progress,
+            progress: response.data.queue[i].progress,
           });
         }
+
+        // Check if not all files are done
+
+        this.active = response.data.active;
         this.queue = tempQueue;
       });
     },
     start() {
       axios({
         method: "post",
-        url: apiUrl + "/ffmpeg",
+        url: apiUrl + "/ffmpeg/start",
         data: {
-          type: "start",
-          options: ["-c:v libx264", "-crf 22", "-preset " + this.speed],
+          ffmpegOptions: ["-c:v libx264", "-crf 22", "-preset " + this.speed],
         },
       });
     },
     stop() {
       axios({
         method: "post",
-        url: apiUrl + "/ffmpeg",
-        data: {
-          type: "stop",
-        },
+        url: apiUrl + "/ffmpeg/stop",
       });
     },
   },
