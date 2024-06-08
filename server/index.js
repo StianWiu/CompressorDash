@@ -3,8 +3,10 @@ const path = require('path');
 const app = express();
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs-extra');
+const cors = require('cors');
 const bodyParser = require('body-parser');
 
+app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '../web/dist')));
 
