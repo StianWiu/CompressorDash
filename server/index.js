@@ -188,7 +188,7 @@ const createQueue = async () => {
 const compressFile = async (filePath, ffmpegOptions) => {
   return new Promise((resolve, reject) => {
     const ffmpeg = require('fluent-ffmpeg');
-    const outputPath = filePath.replace('.mp4', '-compressed.mp4');
+    const outputPath = filePath.replace(/\.[^/.]+$/, '-compressed.mp4');
     let ffmpegProcess = ffmpeg(filePath)
       .addOptions(ffmpegOptions)
       .output(outputPath)
