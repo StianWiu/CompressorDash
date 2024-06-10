@@ -2,19 +2,11 @@
 
 Compressor Dash is a web application that allows users to browse and compress media files stored on their computer or server using a Vue.js front-end and an Express.js back-end. It leverages `ffmpeg` for media compression.
 
-## Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 
-- Browse media files through a user-friendly web interface
+- Browse folders through a user-friendly web interface
 - Compress media files to save storage space
-- View and manage compressed media files
+- If size does not decrease, the original will be kept
 
 ## Installation
 
@@ -47,16 +39,6 @@ Replace `[your_port]` with the port number you want to bind to port 3000 inside 
 ```sh
 docker run -p 3000:3000 -v /path/to/local/directory:/mnt/media stianwiu/compressor-dash
 ```
-
-## Usage
-
-Once the application is running, you can access it at `http://localhost:3000`.
-
-### Browse and Compress Media
-
-1. Select the folder containing your media files.
-2. Select the speed, higher means lower compression.
-3. Press start.
 
 ## Contributing
 
