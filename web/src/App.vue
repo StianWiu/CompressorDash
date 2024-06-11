@@ -85,11 +85,11 @@
           <!-- Calculate % difference -->
           <span v-if="video.difference > 100" style="color: #e36f7b">
             <!-- Show how many % increase-->
-            {{ (video.difference - 100).toFixed(2) }}%
+            +{{ (video.difference - 100).toFixed(2) }}%
           </span>
           <span v-else-if="video.difference < 100" style="color: #6fe377">
             <!-- Limit it to 2 decimals -->
-            +{{ (video.difference - 100).toFixed(2) }}%
+            {{ (video.difference - 100).toFixed(2) }}%
           </span>
           <br />
           <p class="newSize">{{ video.newSize }}</p>
